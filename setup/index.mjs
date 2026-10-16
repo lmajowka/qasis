@@ -3,6 +3,7 @@
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { askSecret, choose, confirm, maskKey } from './prompt.mjs';
+import { bold, cyan, dim, fail, green, heading, icons, ok, red, row, warn, yellow } from './style.mjs';
 import { PROVIDERS, checkKeyFormat, verifyKey } from './providers.mjs';
 import {
   CONFIG_DIR,
@@ -33,8 +34,9 @@ async function chooseBackend() {
   const secure = detectSecureBackend();
   if (secure) return secure;
 
-  console.log('\n⚠ No OS secret store found (macOS Keychain or Linux Secret Service).');
-  console.log(`  The key can instead be saved to a file readable only by you: ${fileBackend().label}`);
+  console.log();
+  warn('No OS secret store found (macOS Keychain or Linux Secret Service).');
+  console.log(`  The key can instead be saved to a file readable only by you: ${cyan(fileBackend().label)}`);
   if (!(await confirm('Store the key in that file?', false))) {
     throw new Error('Aborted: no secure place to store the API key.');
   }
@@ -43,29 +45,30 @@ async function chooseBackend() {
 
 async function collectKey(provider) {
   const { label, consoleUrl } = PROVIDERS[provider];
-  console.log(`\nPaste your ${label} API key. Get one at ${consoleUrl}`);
+  heading('API key');
+  console.log(`  Paste your ${bold(label)} API key. Get one at ${cyan(consoleUrl)}`);
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const key = await askSecret('API key');
     if (!key) {
-      console.log('No key entered.');
+      console.log(yellow('No key entered.'));
       continue;
     }
 
     const formatProblem = checkKeyFormat(provider, key);
     if (formatProblem && !(await confirm(`${formatProblem} Use it anyway?`, false))) continue;
     if (formatProblem && !/^[A-Za-z0-9._\-]+$/.test(key)) {
-      console.log('Key contains characters that cannot be stored safely.');
+      console.log(red('Key contains characters that cannot be stored safely.'));
       continue;
     }
 
-    process.stdout.write(`Verifying ${maskKey(key)} with ${label}… `);
+    process.stdout.write(dim(`  Verifying ${maskKey(key)} with ${label}… `));
     const result = await verifyKey(provider, key);
     if (result.ok) {
-      console.log('✓ valid');
+      console.log(`${icons.ok} ${green('valid')}`);
       return key;
     }
-    console.log(`✗\n  ${result.reason}`);
+    console.log(`${icons.fail}\n  ${red(result.reason)}`);
     if (result.reason.startsWith('Could not reach') && (await confirm('Save it without verifying?', false))) {
       return key;
     }
@@ -76,12 +79,13 @@ async function collectKey(provider) {
 async function install() {
   const existing = readConfig();
   if (existing && !(await confirm(`Qasis is already configured (${existing.provider}). Reconfigure?`, false))) {
-    console.log('Nothing changed.');
+    console.log(dim('Nothing changed.'));
     return;
   }
 
+  heading('Provider');
   const provider = await choose(
-    '\nWhich LLM provider should Qasis use?',
+    'Which LLM provider should Qasis use?',
     Object.entries(PROVIDERS).map(([value, p]) => ({ value, label: p.label })),
   );
 
@@ -101,34 +105,36 @@ async function install() {
     installedAt: new Date().toISOString(),
   });
 
-  console.log(`\n✓ API key stored in ${backend.label}`);
-  console.log(`✓ Config written to ${CONFIG_FILE}`);
-  console.log('\nQasis is installed. Run a QA pass with: npm run qa -- <url>');
+  heading('Done');
+  ok(`API key stored in ${cyan(backend.label)}`);
+  ok(`Config written to ${cyan(CONFIG_FILE)}`);
+  console.log(`\n${green(bold('Qasis is installed.'))} Run a QA pass with: ${cyan('npm run qa -- <url>')}`);
 }
 
 function status() {
   const config = readConfig();
   if (!config) {
-    console.log('Qasis is not configured. Run: bash qasis.sh');
+    console.log(`${icons.warn} Qasis is not configured. Run: ${cyan('bash qasis.sh')}`);
     return;
   }
   const backend = getBackend(config.credentialStore);
   const key = backend?.get(config.provider);
-  console.log(`Provider:          ${PROVIDERS[config.provider]?.label ?? config.provider}`);
-  console.log(`Credential store:  ${backend?.label ?? config.credentialStore}`);
-  console.log(`API key:           ${key ? `present (${maskKey(key)})` : 'MISSING'}`);
-  console.log(`Config:            ${CONFIG_FILE}`);
+  heading('Qasis status');
+  row('Provider', bold(PROVIDERS[config.provider]?.label ?? config.provider));
+  row('Credential store', backend?.label ?? config.credentialStore);
+  row('API key', key ? `${icons.ok} present ${dim(`(${maskKey(key)})`)}` : `${icons.fail} ${red('MISSING')}`);
+  row('Config', cyan(CONFIG_FILE));
 }
 
 async function uninstall() {
   const config = readConfig();
   if (!(await confirm('Remove the stored Qasis API key and config?', false))) {
-    console.log('Nothing changed.');
+    console.log(dim('Nothing changed.'));
     return;
   }
   if (config) getBackend(config.credentialStore)?.delete(config.provider);
   rmSync(CONFIG_DIR, { recursive: true, force: true });
-  console.log('✓ Qasis credentials and config removed. You can now delete this folder.');
+  ok('Qasis credentials and config removed. You can now delete this folder.');
 }
 
 const args = process.argv.slice(2);
@@ -137,6 +143,7 @@ const command = args.includes('--uninstall') ? uninstall : args.includes('--stat
 try {
   await command();
 } catch (err) {
-  console.error(`\n✗ ${err.message}`);
+  console.error();
+  fail(err.message);
   process.exit(1);
 }

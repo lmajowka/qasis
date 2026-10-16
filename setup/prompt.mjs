@@ -1,6 +1,7 @@
 // Terminal prompts. Secrets are read in raw mode so they are never echoed,
 // never land in shell history, and never pass through argv or env vars.
 import { createInterface } from 'node:readline/promises';
+import { bold, cyan, dim, icons, red } from './style.mjs';
 
 export async function ask(question, fallback = '') {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -13,20 +14,20 @@ export async function ask(question, fallback = '') {
 }
 
 export async function confirm(question, defaultYes = true) {
-  const hint = defaultYes ? '[Y/n]' : '[y/N]';
-  const answer = (await ask(`${question} ${hint} `)).toLowerCase();
+  const hint = dim(defaultYes ? '[Y/n]' : '[y/N]');
+  const answer = (await ask(`${icons.arrow} ${question} ${hint} `)).toLowerCase();
   if (!answer) return defaultYes;
   return answer === 'y' || answer === 'yes';
 }
 
 export async function choose(question, options) {
-  console.log(question);
-  options.forEach((opt, i) => console.log(`  ${i + 1}) ${opt.label}`));
+  console.log(bold(question));
+  options.forEach((opt, i) => console.log(`  ${cyan(`${i + 1})`)} ${opt.label}`));
   for (;;) {
-    const answer = await ask(`Choose [1-${options.length}] (default 1): `, '1');
+    const answer = await ask(`${icons.arrow} Choose ${dim(`[1-${options.length}] (default 1)`)}: `, '1');
     const index = Number.parseInt(answer, 10) - 1;
     if (options[index]) return options[index].value;
-    console.log('Invalid choice.');
+    console.log(red('Invalid choice.'));
   }
 }
 
@@ -65,7 +66,7 @@ export function askSecret(question) {
       }
     };
 
-    stdout.write(`${question} (input hidden): `);
+    stdout.write(`${icons.arrow} ${question} ${dim('(input hidden)')}: `);
     stdin.setEncoding('utf8');
     stdin.setRawMode(true);
     stdin.resume();

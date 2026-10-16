@@ -13,11 +13,19 @@ umask 077 # anything we create is readable by the current user only
 REQUIRED_NODE_MAJOR=22
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-bold() { printf '\033[1m%s\033[0m\n' "$*"; }
-fail() { printf '\033[31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
-ok()   { printf '\033[32m✓\033[0m %s\n' "$*"; }
+# Colors only on a real terminal, and never when NO_COLOR is set.
+if [ -t 1 ] && [ -z "${NO_COLOR+x}" ] && [ "${TERM:-}" != "dumb" ]; then
+  B=$'\033[1m' D=$'\033[2m' R=$'\033[31m' G=$'\033[32m' C=$'\033[36m' M=$'\033[35m' X=$'\033[0m'
+else
+  B='' D='' R='' G='' C='' M='' X=''
+fi
 
-bold "Qasis installer"
+fail() { printf '%s✗ %s%s\n' "$R" "$*" "$X" >&2; exit 1; }
+ok()   { printf '%s✓%s %s\n' "$G" "$X" "$*"; }
+
+printf '\n%s  ╭─────────────────────────────╮%s\n' "$M" "$X"
+printf '%s  │%s  %s◆ Qasis%s  %ssetup & API key%s   %s│%s\n' "$M" "$X" "$B$C" "$X" "$D" "$X" "$M" "$X"
+printf '%s  ╰─────────────────────────────╯%s\n\n' "$M" "$X"
 
 # Never install as root: credentials would land in root's keychain/home.
 if [ "$(id -u)" -eq 0 ]; then
