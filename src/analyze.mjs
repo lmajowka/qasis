@@ -7,7 +7,7 @@ import Anthropic from '@anthropic-ai/sdk';
 export const SEVERITIES = ['critical', 'high', 'medium', 'low'];
 const CATEGORIES = ['javascript', 'network', 'broken-link', 'accessibility', 'performance', 'mobile', 'other'];
 
-const DEFAULT_MODELS = { anthropic: 'claude-opus-5-5', openai: 'gpt-5' };
+const DEFAULT_MODELS = { anthropic: 'claude-opus-5-5', openai: 'gpt-5', deepseek: 'deepseek-v4-pro' };
 
 const MAX_GROUPS = 60; // per category, to keep the prompt bounded
 const MAX_PAGES_PER_GROUP = 15;
@@ -149,25 +149,56 @@ async function callAnthropic({ apiKey, model, input }) {
   return { text, model: message.model, usage: message.usage };
 }
 
-async function callOpenAI({ apiKey, model, input }) {
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+// OpenAI-style chat completions, shared by OpenAI and DeepSeek.
+async function callChatCompletions({ url, label, apiKey, model, system, input, extra }) {
+  const res = await fetch(url, {
     method: 'POST',
     headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
     body: JSON.stringify({
       model,
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'system', content: system },
         { role: 'user', content: `QA findings (JSON):\n\n${input}` },
       ],
-      response_format: { type: 'json_schema', json_schema: { name: 'qa_report', strict: true, schema: REPORT_SCHEMA } },
+      ...extra,
     }),
   });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(`OpenAI returned HTTP ${res.status}: ${body.error?.message ?? 'unknown error'}`);
+  if (!res.ok) throw new Error(`${label} returned HTTP ${res.status}: ${body.error?.message ?? 'unknown error'}`);
   const choice = body.choices?.[0];
   if (choice?.message?.refusal) throw new Error(`The model declined to write the report: ${choice.message.refusal}`);
   if (choice?.finish_reason === 'length') throw new Error('The model ran out of output tokens.');
   return { text: choice?.message?.content ?? '', model: body.model, usage: body.usage };
+}
+
+function callOpenAI({ apiKey, model, input }) {
+  return callChatCompletions({
+    url: 'https://api.openai.com/v1/chat/completions',
+    label: 'OpenAI',
+    apiKey,
+    model,
+    system: SYSTEM_PROMPT,
+    input,
+    extra: {
+      response_format: { type: 'json_schema', json_schema: { name: 'qa_report', strict: true, schema: REPORT_SCHEMA } },
+    },
+  });
+}
+
+// DeepSeek only offers `json_object` mode (no schema enforcement), so the schema
+// goes in the prompt and the result is shape-checked in writeReportWithLlm().
+async function callDeepSeek({ apiKey, model, input }) {
+  const result = await callChatCompletions({
+    url: 'https://api.deepseek.com/chat/completions',
+    label: 'DeepSeek',
+    apiKey,
+    model,
+    system: `${SYSTEM_PROMPT}\n\nRespond with a single JSON object that matches this JSON Schema:\n${JSON.stringify(REPORT_SCHEMA)}`,
+    input,
+    extra: { response_format: { type: 'json_object' }, max_tokens: 32000 },
+  });
+  if (!result.text.trim()) throw new Error('DeepSeek returned an empty response.');
+  return result;
 }
 
 /**
@@ -175,7 +206,7 @@ async function callOpenAI({ apiKey, model, input }) {
  * @returns {Promise<{ report: object, meta: object }>}
  */
 export async function writeReportWithLlm(condensed, { provider, apiKey, model }) {
-  const call = { anthropic: callAnthropic, openai: callOpenAI }[provider];
+  const call = { anthropic: callAnthropic, openai: callOpenAI, deepseek: callDeepSeek }[provider];
   if (!call) throw new Error(`Unsupported LLM provider: ${provider}`);
   const chosenModel = model || DEFAULT_MODELS[provider];
   const { text, model: usedModel, usage } = await call({ apiKey, model: chosenModel, input: JSON.stringify(condensed) });
@@ -185,6 +216,11 @@ export async function writeReportWithLlm(condensed, { provider, apiKey, model })
     report = JSON.parse(text);
   } catch {
     throw new Error('The model returned a report that is not valid JSON.');
+  }
+  const shapeOk = ['good', 'fair', 'poor'].includes(report?.overallHealth) && typeof report.summary === 'string'
+    && Array.isArray(report.issues) && Array.isArray(report.positives);
+  if (!shapeOk) {
+    throw new Error('The model returned JSON that does not match the report shape.');
   }
   return { report: sortIssues(report), meta: { provider, model: usedModel ?? chosenModel, usage } };
 }

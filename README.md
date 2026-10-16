@@ -72,7 +72,7 @@ Headless Chromium opens each page, one at a time, staying on the start URL's ori
 ### The report
 
 The findings are grouped and condensed, then sent to the LLM chosen at install time
-(`claude-opus-5-5` for Anthropic, `gpt-5` for OpenAI; set `"model"` in `config.json` to override).
+(`claude-opus-5-5` for Anthropic, `gpt-5` for OpenAI, `deepseek-v4-pro` for DeepSeek; set `"model"` in `config.json` to override).
 It merges duplicates, assigns a severity (critical/high/medium/low) and writes the report in plain language.
 If the LLM call fails, Qasis still writes a rule-based report and says so at the top.
 

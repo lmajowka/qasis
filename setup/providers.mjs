@@ -19,6 +19,15 @@ export const PROVIDERS = {
         headers: { authorization: `Bearer ${key}` },
       }),
   },
+  deepseek: {
+    label: 'DeepSeek',
+    keyHint: 'sk-',
+    consoleUrl: 'https://platform.deepseek.com/api_keys',
+    verify: (key) =>
+      fetch('https://api.deepseek.com/models', {
+        headers: { authorization: `Bearer ${key}` },
+      }),
+  },
 };
 
 // API keys are opaque tokens; anything outside this set is almost certainly a
