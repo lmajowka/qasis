@@ -1,0 +1,68 @@
+<% watched = @sites.select(&:service) %>
+<% problems = @installation.problems + @sites.flat_map { |s| s.problems.map { |p| "#{s.slug}: #{p}" } } %>
+
+<div class="hero">
+  <div>
+    <h1>Qasis dashboard</h1>
+    <p class="muted"><%= pluralize(@sites.size, "site") %> · <%= watched.count { |s| s.watch_state == :running } %> of <%= pluralize(watched.size, "watch service") %> running</p>
+  </div>
+  <% if problems.empty? && @installation.configured? %>
+    <%= status_dot(:ok, "All good") %>
+  <% elsif problems.any? %>
+    <%= status_dot(:bad, pluralize(problems.size, "problem")) %>
+  <% end %>
+</div>
+
+<% if problems.any? %>
+  <section class="card alert">
+    <h2>Needs attention</h2>
+    <ul><% problems.each do |p| %><li><%= p %></li><% end %></ul>
+  </section>
+<% end %>
+
+<div class="grid">
+  <%= render "shared/installation", installation: @installation %>
+
+  <section class="card">
+    <h2>Open issues</h2>
+    <p class="muted">Latest QA run of each site</p>
+    <div class="totals">
+      <% Qasis::SEVERITIES.each do |sev| %>
+        <div class="<%= sev %>"><b><%= @sites.sum { |s| s.latest_run&.counts&.dig(sev).to_i } %></b><%= sev.capitalize %></div>
+      <% end %>
+    </div>
+  </section>
+</div>
+
+<section class="card">
+  <h2>Sites</h2>
+  <% if @sites.empty? %>
+    <p class="empty">No sites yet. Run <code>npm run qa -- example.com</code> or <code>npm run watch -- example.com</code>.</p>
+  <% else %>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Site</th><th>Watch</th><th>Health</th>
+            <% Qasis::SEVERITIES.each do |s| %><th class="num"><%= s.capitalize %></th><% end %>
+            <th>Last QA run</th><th class="num">Flows</th><th>Last flow pass</th><th>Next pass</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% @sites.each do |site| %>
+            <tr>
+              <td><%= link_to site.slug, site_path(site), class: "strong" %><% if site.problems.any? %> <span class="warn" title="<%= site.problems.join("\n") %>">⚠</span><% end %></td>
+              <td><%= watch_badge(site) %></td>
+              <td><%= health_badge(site.latest_run&.health) %></td>
+              <%= severity_cells(site.latest_run&.counts) %>
+              <td><%= at(site.latest_run&.finished_at) %></td>
+              <td class="num"><%= site.flows ? site.flow_list.size : "—" %></td>
+              <td><%= at(site.last_pass_at) %></td>
+              <td><%= site.pass_running? ? "now" : at(site.next_pass_at) %></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  <% end %>
+</section>

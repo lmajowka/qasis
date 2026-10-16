@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title><%= content_for(:title) || "Qasis dashboard" %></title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="application-name" content="Qasis dashboard">
+    <%= csrf_meta_tags %>
+    <%= csp_meta_tag %>
+    <%= turbo_refreshes_with method: :morph, scroll: :preserve %>
+    <%= yield :head %>
+
+    <link rel="icon" href="/icon.png" type="image/png">
+    <link rel="icon" href="/icon.svg" type="image/svg+xml">
+
+    <%= stylesheet_link_tag :app, "data-turbo-track": "reload" %>
+    <%= javascript_importmap_tags %>
+  </head>
+
+  <body data-controller="refresh">
+    <header class="topbar">
+      <div class="wrap">
+        <%= link_to "Qasis", root_path, class: "brand" %>
+        <span class="muted">Live from <code><%= Qasis.reports_dir %></code> · refreshes every 15 s</span>
+      </div>
+    </header>
+    <main class="wrap">
+      <%= yield %>
+    </main>
+  </body>
+</html>

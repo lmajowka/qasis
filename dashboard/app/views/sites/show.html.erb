@@ -1,0 +1,163 @@
+<% content_for :title, "#{@site.slug} · Qasis" %>
+<% latest = @site.latest_run %>
+
+<p><%= link_to "← All sites", root_path, class: "muted" %></p>
+<div class="hero">
+  <div>
+    <h1><%= @site.slug %></h1>
+    <p class="muted"><%= @site.url.match?(%r{\Ahttps?://}i) ? link_to(@site.url, @site.url, target: "_blank", rel: "noopener") : @site.url %></p>
+  </div>
+  <div class="badges"><%= watch_badge(@site) %> <%= health_badge(latest&.health) %></div>
+</div>
+
+<% if @site.problems.any? %>
+  <section class="card alert">
+    <h2>Needs attention</h2>
+    <ul><% @site.problems.each do |p| %><li><%= p %></li><% end %></ul>
+  </section>
+<% end %>
+
+<div class="grid">
+  <section class="card">
+    <h2>Watch service</h2>
+    <% if (svc = @site.service) %>
+      <dl class="facts">
+        <dt>State</dt><dd><%= svc.status[:state] %><%= " (pid #{svc.status[:pid]})" if svc.status[:pid] %></dd>
+        <% if svc.status[:last_exit].present? %><dt>Last exit</dt><dd><%= svc.status[:last_exit] %></dd><% end %>
+        <dt>Manager</dt><dd><%= svc.manager_label %> · <code><%= svc.label %></code></dd>
+        <dt>Every</dt><dd><%= @site.interval_hours %> h</dd>
+        <dt>Depth / pages</dt><dd><%= svc.option("depth") || 3 %> / <%= svc.option("max-pages") || 40 %></dd>
+        <dt>AI docs</dt><dd><%= svc.ai? ? "yes" : "no (--no-ai)" %></dd>
+        <dt>Last pass</dt><dd><%= at(@site.last_pass_at) %></dd>
+        <dt>Next pass</dt><dd><%= @site.pass_running? ? "running now" : at(@site.next_pass_at) %></dd>
+      </dl>
+      <p class="muted">Stop with <code>npm run unwatch -- <%= @site.url %></code></p>
+    <% else %>
+      <p class="empty">Not watched. Start with <code>npm run watch -- <%= @site.url %></code></p>
+      <% if @site.manual_run? %><p><%= status_dot(:busy, "A flow-discovery process started by hand is running") %></p><% end %>
+    <% end %>
+  </section>
+
+  <section class="card">
+    <h2>Latest QA run</h2>
+    <% if latest %>
+      <div class="totals">
+        <% Qasis::SEVERITIES.each do |sev| %><div class="<%= sev %>"><b><%= latest.counts[sev] %></b><%= sev.capitalize %></div><% end %>
+      </div>
+      <p><%= latest.summary %></p>
+      <p class="muted"><%= at(latest.finished_at) %> · <%= pluralize(latest.pages || 0, "page") %> · written by <%= latest.written_by %></p>
+    <% else %>
+      <p class="empty">No QA runs yet. Run <code>npm run qa -- <%= @site.slug %></code></p>
+    <% end %>
+  </section>
+</div>
+
+<% if latest&.issues&.any? %>
+  <section class="card">
+    <h2>Issues in the latest run</h2>
+    <ul class="issues">
+      <% latest.issues.each do |issue| %>
+        <li class="<%= issue["severity"] %>">
+          <span class="sev"><%= issue["severity"] %></span>
+          <div>
+            <strong><%= issue["title"] %></strong> <span class="muted"><%= issue["category"] %></span>
+            <p><%= issue["explanation"] %></p>
+            <% if issue["recommendation"].present? %><p class="muted">→ <%= issue["recommendation"] %></p><% end %>
+            <% pages = Array(issue["affectedPages"]) %>
+            <% if pages.any? %><p class="muted small"><%= pages.first(3).join(", ") %><%= " +#{pages.size - 3} more" if pages.size > 3 %></p><% end %>
+          </div>
+        </li>
+      <% end %>
+    </ul>
+  </section>
+<% end %>
+
+<section class="card">
+  <h2>QA runs</h2>
+  <% if @site.runs.any? %>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Run</th><th>Health</th><% Qasis::SEVERITIES.each do |s| %><th class="num"><%= s.capitalize %></th><% end %><th class="num">Pages</th><th>Written by</th><th>Report</th></tr></thead>
+        <tbody>
+          <% @site.runs.each do |run| %>
+            <tr>
+              <td><%= run.name %></td>
+              <td><%= health_badge(run.health) %></td>
+              <%= severity_cells(run.counts) %>
+              <td class="num"><%= run.pages || "—" %></td>
+              <td><%= run.written_by %><% if run.warning %> <span class="warn" title="<%= run.warning %>">⚠</span><% end %></td>
+              <td>
+                <%= report_link(@site.slug, run.name, "report.html", label: "HTML") if run.html? %>
+                <%= report_link(@site.slug, run.name, "report.md", label: "Markdown") if run.md? %>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  <% else %>
+    <p class="empty">None yet.</p>
+  <% end %>
+</section>
+
+<section class="card">
+  <h2>User flows</h2>
+  <% if @site.flows %>
+    <p>
+      <%= pluralize(@site.flow_list.size, "flow") %> known
+      <% @site.flow_counts.each do |status, n| %> · <%= flow_chip(status) %> <%= n %><% end %>
+      · <%= report_link(@site.slug, "flows", "index.md", label: "Index") %>
+    </p>
+    <% if @site.flow_list.any? %>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Flow</th><th>Kind</th><th>Status</th><th>First seen</th><th>Last seen</th></tr></thead>
+          <tbody>
+            <% @site.flow_list.sort_by { |f| [ f["status"] == "missing" ? 1 : 0, f["id"] ] }.each do |f| %>
+              <tr>
+                <td><%= report_link(@site.slug, "flows", "#{f['id']}.md", label: f.dig("doc", "name") || f["id"]) %></td>
+                <td><%= f["kind"] %></td>
+                <td><%= flow_chip(f["status"]) %></td>
+                <td><%= at(Qasis.time(f["firstSeenAt"])) %></td>
+                <td><%= at(Qasis.time(f["lastSeenAt"])) %></td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    <% end %>
+    <% if @site.flow_passes.any? %>
+      <h3>Recent passes</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Finished</th><th class="num">Pages</th><th class="num">Found</th><th class="num">New</th><th class="num">Changed</th><th class="num">Not seen</th><th>Notes</th></tr></thead>
+          <tbody>
+            <% @site.flow_passes.last(10).reverse_each do |r| %>
+              <tr>
+                <td><%= report_link(@site.slug, "flows", "runs", r["file"], label: Qasis.time(r["finishedAt"])&.localtime&.to_fs(:short) || r["file"]) %></td>
+                <td class="num"><%= r["pagesVisited"] %></td>
+                <td class="num"><%= r["found"] %></td>
+                <td class="num"><%= r["added"] %></td>
+                <td class="num"><%= r["changed"] %></td>
+                <td class="num"><%= r["missing"] %></td>
+                <td class="small"><%= Array(r["warnings"]).join("; ").presence || "—" %></td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    <% end %>
+  <% else %>
+    <p class="empty">No flow discovery yet. Run <code>npm run flows -- <%= @site.slug %> --once</code></p>
+  <% end %>
+</section>
+
+<section class="card">
+  <h2>Service log</h2>
+  <% if @site.log_tail.any? %>
+    <p class="muted">Last <%= @site.log_tail.size %> lines of <%= report_link(@site.slug, "flows", "service.log", label: "service.log") %></p>
+    <pre class="log"><% @site.log_tail.each do |line| %><span class="<%= { "✗" => "err", "⚠" => "wrn", "✓" => "okl" }[line[0]] %>"><%= line %></span><% end %></pre>
+  <% else %>
+    <p class="empty">No log yet.</p>
+  <% end %>
+</section>

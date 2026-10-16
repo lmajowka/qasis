@@ -1,0 +1,15 @@
+<section class="card">
+  <h2>Installation</h2>
+  <ul class="checks">
+    <%= check_row "Configured", installation.configured?,
+          installation.configured? ? "since #{installation.installed_at&.localtime&.to_fs(:long) || '—'}" : "run bash qasis.sh" %>
+    <% if installation.configured? %>
+      <%= check_row "LLM provider", true, "#{installation.provider_label} · #{installation.model}" %>
+      <%= check_row "API key", installation.api_key_present?,
+            installation.api_key_present? ? "stored in #{installation.credential_store_label}" : "missing from #{installation.credential_store_label}" %>
+    <% end %>
+    <%= check_row "Node packages", installation.node_modules?, installation.node_modules? ? "playwright installed" : "run npm install" %>
+    <%= check_row "Chromium", installation.chromium?, installation.chromium? ? "ready" : "run npx playwright install chromium" %>
+  </ul>
+  <p class="muted">Config: <code><%= installation.config_file %></code> · default flow interval <%= installation.flow_interval_hours %> h</p>
+</section>

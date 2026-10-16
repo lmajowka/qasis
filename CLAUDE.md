@@ -20,6 +20,7 @@ npm run flows -- example.com --once --no-ai --depth 1 --max-pages 5   # one flow
 npm run flows -- example.com                                         # watch: a pass every 4 h
 npm run dashboard                      # rebuild reports/index.html (also rebuilt after every qa run and flow pass)
 npm run watch -- example.com --no-ai   # same watch, as a launchd/systemd user service; npm run unwatch -- example.com
+cd dashboard && bin/rails server       # live Rails dashboard at http://localhost:3000
 ```
 
 Output goes to `reports/<host>/<YYYY-MM-DD>[-N]/`, which is gitignored. To check a change, run a small `--no-ai` pass and inspect `report.md` and the `raw/*.json` files.
@@ -52,3 +53,5 @@ To add an LLM provider, touch three places: `PROVIDERS` in `setup/providers.mjs`
 4. `render.mjs` writes `<id>.md`, `index.md` and `runs/<time>.md`. `run.mjs` ties a single pass together.
 
 **`src/dashboard.mjs`** builds `reports/index.html` across all sites by reading only files on disk: each QA run's `raw/report.json` (written by `cli.mjs` as `{ run, meta, report }`; older runs fall back to `llm-report.json` or re-derive from `condensed.json` via `writeBasicReport()`) and each site's `flows/state.json`. `cli.mjs` and `flows-cli.mjs` rebuild it after each run; a failure there is only a warning.
+
+**`dashboard/` is a Rails 8 app (Ruby 3.4) that shows a live, read-only view** of the same data, plus things the static `reports/index.html` cannot show: whether setup is complete, and the state of each watch service. It has no database. The plain Ruby classes under `app/models/qasis/` read `config.json`, `reports/` and the service files directly. They duplicate rules from the Node side: `siteSlug()`, the service file names and the `qasis-site:` marker from `setup/service.mjs`, the `.lock` file from `store.mjs`, and the log lines `flows-cli.mjs` prints (used to tell whether a pass is running). If you change any of those, update the dashboard too. It must never read the API key. On macOS it checks with `security find-generic-password` without `-w`.
