@@ -103,7 +103,7 @@ async function install() {
 
   console.log(`\n✓ API key stored in ${backend.label}`);
   console.log(`✓ Config written to ${CONFIG_FILE}`);
-  console.log('\nQasis is installed. (It does not run any QA jobs yet.)');
+  console.log('\nQasis is installed. Run a QA pass with: npm run qa -- <url>');
 }
 
 function status() {

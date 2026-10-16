@@ -4,13 +4,22 @@
   "description": "Qasis — an agent that continuously QAs websites and generates reports.",
   "type": "module",
   "private": true,
+  "bin": {
+    "qasis-qa": "src/cli.mjs"
+  },
   "engines": {
     "node": ">=22"
   },
   "scripts": {
     "setup": "node setup/index.mjs",
     "status": "node setup/index.mjs --status",
-    "uninstall": "node setup/index.mjs --uninstall"
+    "uninstall": "node setup/index.mjs --uninstall",
+    "qa": "node src/cli.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.135.0",
+    "@axe-core/playwright": "4.14.0",
+    "playwright": "1.64.1"
   },
   "license": "MIT"
 }
