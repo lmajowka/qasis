@@ -1,0 +1,16 @@
+{
+  "name": "qasis",
+  "version": "0.0.1",
+  "description": "Qasis — an agent that continuously QAs websites and generates reports.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "setup": "node setup/index.mjs",
+    "status": "node setup/index.mjs --status",
+    "uninstall": "node setup/index.mjs --uninstall"
+  },
+  "license": "MIT"
+}
