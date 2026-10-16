@@ -18,6 +18,7 @@ npm run qa -- example.com --depth 1 --max-pages 5 --no-ai   # quick run without 
 npm run qa -- https://example.com --format html
 npm run flows -- example.com --once --no-ai --depth 1 --max-pages 5   # one flow-discovery pass
 npm run flows -- example.com                                         # watch: a pass every 4 h
+npm run watch -- example.com --no-ai   # same watch, as a launchd/systemd user service; npm run unwatch -- example.com
 ```
 
 Output goes to `reports/<host>/<YYYY-MM-DD>[-N]/`, which is gitignored. To check a change, run a small `--no-ai` pass and inspect `report.md` and the `raw/*.json` files.
@@ -29,6 +30,7 @@ There are two halves, and they deliberately have different dependency rules.
 **`setup/` is the installer. It uses Node built-ins only, with no npm dependencies.** This is a security property stated in the README. Do not import third-party packages here.
 - `index.mjs` handles the install/status/uninstall flow. `prompt.mjs` reads the hidden key in raw TTY mode. `providers.mjs` checks the key format and verifies it with a read-only `GET /v1/models`.
 - `credentials.mjs` has three backends: macOS Keychain (`security -i`, with the key passed on stdin), Linux Secret Service (`secret-tool`), and a `0600` file fallback at `~/.config/qasis/credentials.json`. Keys never go in argv or env vars. Shell quoting in the Keychain backend is only safe because `KEY_PATTERN` in `providers.mjs` restricts the charset, so keep that validation if you touch either file.
+- `service.mjs` installs one background service per watched site: a launchd LaunchAgent on macOS, a systemd user unit on Linux. It runs `src/flows-cli.mjs` in watch mode and appends output to `reports/<site>/flows/service.log`. A `qasis-site:` comment in each service file records the URL, which is how `--status` and `--uninstall` find them. It copies `siteSlug()` from `src/crawl.mjs`, so keep the two the same. `npm run watch` checks Playwright by spawning a child `node`, so setup itself never imports it.
 - Non-secret settings (`provider`, `credentialStore`, optional `model`) live in `~/.config/qasis/config.json` (honours `XDG_CONFIG_HOME`).
 
 **`src/` is the QA runner.** It uses Playwright, `@axe-core/playwright` and `@anthropic-ai/sdk`. The pipeline is driven by `cli.mjs`:

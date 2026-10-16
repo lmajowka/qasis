@@ -111,6 +111,22 @@ npm run flows -- example.com --every 12 --no-ai   # every 12 hours, rule-based d
 The schedule is saved with the site's state, so restarting the watcher does not cause an early pass.
 Only one discovery process can run per site at a time.
 
+### Keep watching in the background
+
+`npm run flows` stops when you close the terminal. To keep a site watched across logouts, crashes and reboots, install it as a background service:
+
+```bash
+npm run watch -- https://example.com               # same options as flows: --every, --depth, --max-pages, --no-ai
+npm run status                                     # lists watched sites and whether each is running
+npm run unwatch -- https://example.com             # stop and remove the service; flow docs are kept
+```
+
+- **macOS:** a LaunchAgent in `~/Library/LaunchAgents/com.qasis.flows.<site>.plist`. It starts at login and is restarted if it crashes.
+- **Linux:** a systemd user unit in `~/.config/systemd/user/qasis-flows-<site>.service`. User services stop at logout unless you run `loginctl enable-linger $USER`, and `npm run watch` tells you when that is needed. On a headless server the Secret Service is usually locked without a login session, so store the key in the file fallback there.
+- Output goes to `reports/<site>/flows/service.log`.
+- The service has no secrets in it. It reads the key from the credential store the same way `npm run flows` does.
+- It runs the Node binary and checkout you ran `npm run watch` from. If you move the folder or change Node versions, run `npm run watch` again. `bash qasis.sh --uninstall` removes every service.
+
 ### What counts as a flow
 
 - **Forms:** sign up, log in, password reset, search, contact, newsletter, checkout, or a generic form. Each comes with its fields, labels, required fields and submit button.

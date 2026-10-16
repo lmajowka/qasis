@@ -1,7 +1,9 @@
 // Qasis setup: pick an LLM provider, collect the API key securely, verify it,
 // and store it in the OS secret store. Non-secret settings go to config.json.
+import { spawnSync } from 'node:child_process';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { parseArgs } from 'node:util';
 import { askSecret, choose, confirm, maskKey } from './prompt.mjs';
 import { bold, cyan, dim, fail, green, heading, icons, ok, red, row, warn, yellow } from './style.mjs';
 import { PROVIDERS, checkKeyFormat, verifyKey } from './providers.mjs';
@@ -13,6 +15,7 @@ import {
   getBackend,
   storeKey,
 } from './credentials.mjs';
+import { ROOT_DIR, installService, listServices, logFile, removeService, serviceManager } from './service.mjs';
 
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
 const MAX_ATTEMPTS = 3;
@@ -115,6 +118,7 @@ function status() {
   const config = readConfig();
   if (!config) {
     console.log(`${icons.warn} Qasis is not configured. Run: ${cyan('bash qasis.sh')}`);
+    watchedSites();
     return;
   }
   const backend = getBackend(config.credentialStore);
@@ -124,6 +128,16 @@ function status() {
   row('Credential store', backend?.label ?? config.credentialStore);
   row('API key', key ? `${icons.ok} present ${dim(`(${maskKey(key)})`)}` : `${icons.fail} ${red('MISSING')}`);
   row('Config', cyan(CONFIG_FILE));
+  watchedSites();
+}
+
+function watchedSites() {
+  const manager = serviceManager();
+  const services = manager ? listServices(manager) : [];
+  if (services.length) {
+    heading('Watched sites');
+    for (const s of services) console.log(`  ${bold(s.url)}\n    ${s.state}  ${dim(s.log)}`);
+  }
 }
 
 async function uninstall() {
@@ -132,13 +146,111 @@ async function uninstall() {
     console.log(dim('Nothing changed.'));
     return;
   }
+  const manager = serviceManager();
+  for (const { url } of manager ? listServices(manager) : []) {
+    removeService(manager, url);
+    ok(`Stopped watching ${cyan(url)}`);
+  }
   if (config) getBackend(config.credentialStore)?.delete(config.provider);
   rmSync(CONFIG_DIR, { recursive: true, force: true });
   ok('Qasis credentials and config removed. You can now delete this folder.');
 }
 
+const WATCH_USAGE = `Usage: npm run watch -- <url> [--every <hours>] [--depth <n>] [--max-pages <n>] [--no-ai]
+       npm run unwatch -- <url>`;
+
+/** Parse `--watch/--unwatch <url> [flow options]`, validating what the service will be started with. */
+function parseWatchArgs(argv) {
+  const { values, positionals } = parseArgs({
+    args: argv,
+    allowPositionals: true,
+    options: {
+      watch: { type: 'boolean' },
+      unwatch: { type: 'boolean' },
+      every: { type: 'string' },
+      depth: { type: 'string' },
+      'max-pages': { type: 'string' },
+      'no-ai': { type: 'boolean', default: false },
+    },
+  });
+  if (positionals.length !== 1) throw new Error(`Give exactly one site.\n${WATCH_USAGE}`);
+  const raw = positionals[0];
+  const url = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`).href;
+
+  const flowArgs = [];
+  const number = (name, valid, rule) => {
+    if (values[name] === undefined) return;
+    if (!valid(Number(values[name]))) throw new Error(`--${name} must be ${rule}`);
+    flowArgs.push(`--${name}`, String(Number(values[name])));
+  };
+  number('every', (n) => n >= 0.1, 'a number of hours ≥ 0.1');
+  number('depth', (n) => Number.isInteger(n) && n >= 0, 'an integer ≥ 0');
+  number('max-pages', (n) => Number.isInteger(n) && n >= 1, 'an integer ≥ 1');
+  if (values['no-ai']) flowArgs.push('--no-ai');
+  return { url, flowArgs, useAi: !values['no-ai'] };
+}
+
+function requireServiceManager() {
+  if (process.getuid?.() === 0) throw new Error('Do not run this as root or with sudo.');
+  const manager = serviceManager();
+  if (!manager) {
+    throw new Error('No supported service manager (launchd or systemd --user). Run `npm run flows -- <url>` in tmux instead.');
+  }
+  return manager;
+}
+
+/** Check that the QA runner can start, so the service does not just fail in the background. */
+function checkRunnerReady(useAi) {
+  // Spawned, not imported: setup/ itself stays free of third-party packages.
+  const probe = spawnSync(
+    process.execPath,
+    ['--input-type=module', '-e', "import { chromium } from 'playwright'; import { accessSync } from 'node:fs'; accessSync(chromium.executablePath());"],
+    { cwd: ROOT_DIR, stdio: 'ignore' },
+  );
+  if (probe.status !== 0) {
+    throw new Error('The QA runner is not installed. Run: npm install && npx playwright install chromium');
+  }
+  if (!useAi) return null;
+  const config = readConfig();
+  if (!config) throw new Error('Qasis is not configured. Run: bash qasis.sh (or add --no-ai)');
+  if (!getBackend(config.credentialStore)?.get(config.provider)) {
+    throw new Error(`No ${config.provider} API key found. Re-run: bash qasis.sh`);
+  }
+  return config;
+}
+
+async function watch() {
+  const { url, flowArgs, useAi } = parseWatchArgs(process.argv.slice(2));
+  const manager = requireServiceManager();
+  const config = checkRunnerReady(useAi);
+
+  heading(`Watch ${url}`);
+  const file = installService(manager, url, flowArgs, { credentialStore: config?.credentialStore });
+  ok(`Service installed: ${cyan(file)}`);
+  for (const note of manager.notes()) warn(note);
+  console.log(`\n  It starts at login and restarts if it crashes. Passes keep the existing schedule.`);
+  console.log(`  Log:     ${cyan(logFile(url))}`);
+  console.log(`  Status:  ${cyan('npm run status')}`);
+  console.log(`  Stop:    ${cyan(`npm run unwatch -- ${url}`)}`);
+}
+
+async function unwatch() {
+  const { url } = parseWatchArgs(process.argv.slice(2));
+  const manager = requireServiceManager();
+  if (removeService(manager, url)) ok(`Stopped watching ${cyan(url)}. Its flow docs are kept.`);
+  else console.log(dim(`${url} was not being watched.`));
+}
+
 const args = process.argv.slice(2);
-const command = args.includes('--uninstall') ? uninstall : args.includes('--status') ? status : install;
+const command = args.includes('--watch')
+  ? watch
+  : args.includes('--unwatch')
+    ? unwatch
+    : args.includes('--uninstall')
+      ? uninstall
+      : args.includes('--status')
+        ? status
+        : install;
 
 try {
   await command();
