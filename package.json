@@ -6,7 +6,8 @@
   "private": true,
   "bin": {
     "qasis-qa": "src/cli.mjs",
-    "qasis-flows": "src/flows-cli.mjs"
+    "qasis-flows": "src/flows-cli.mjs",
+    "qasis-dashboard": "src/dashboard-cli.mjs"
   },
   "engines": {
     "node": ">=22"
@@ -18,7 +19,8 @@
     "watch": "node setup/index.mjs --watch",
     "unwatch": "node setup/index.mjs --unwatch",
     "qa": "node src/cli.mjs",
-    "flows": "node src/flows-cli.mjs"
+    "flows": "node src/flows-cli.mjs",
+    "dashboard": "node src/dashboard-cli.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.135.0",

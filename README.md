@@ -152,3 +152,15 @@ reports/<site>/flows/
 ```
 
 New and changed flows are sent to your LLM provider to be documented: URLs, link texts and form structure (field names and labels, never values).
+
+## Dashboard
+
+`reports/index.html` gives an overview of every site in one page: the health and issue counts of each QA run with links to the full reports, and each site's known flows and recent discovery passes.
+It is rebuilt after every QA run and flow pass, so a background watcher keeps it current. To rebuild it by hand (for example after deleting old runs):
+
+```bash
+npm run dashboard                 # writes reports/index.html
+npm run dashboard -- --out other  # for a different output root
+```
+
+It is a static file with no scripts and nothing loaded from the network. Open it straight from disk.

@@ -11,6 +11,7 @@ import { parseArgs } from 'node:util';
 import { condenseFindings, SEVERITIES, writeBasicReport, writeReportWithLlm } from './analyze.mjs';
 import { loadLlmSettings } from './config.mjs';
 import { crawlSite, siteSlug } from './crawl.mjs';
+import { buildDashboard } from './dashboard.mjs';
 import { renderHtml, renderMarkdown } from './report.mjs';
 
 const USAGE = `Usage: npm run qa -- <url> [options]
@@ -73,6 +74,15 @@ function makeRunDir(outRoot, url) {
 const writeJson = (path, value) => writeFileSync(path, JSON.stringify(value, null, 2) + '\n');
 const log = (msg) => console.error(msg);
 
+// The report is already written, so a dashboard failure is only a warning.
+function updateDashboard(outRoot) {
+  try {
+    buildDashboard(outRoot);
+  } catch (err) {
+    log(`⚠ Could not update the dashboard: ${err.message}`);
+  }
+}
+
 async function main() {
   const opts = parseOptions(process.argv.slice(2));
 
@@ -113,6 +123,12 @@ async function main() {
     }
   }
   report ??= writeBasicReport(condensed);
+  // What the dashboard reads, whichever way the report was written.
+  writeJson(join(runDir, 'raw', 'report.json'), {
+    run: { startedAt: data.startedAt, finishedAt: data.finishedAt, pagesVisited: data.pages.length },
+    meta,
+    report,
+  });
 
   const written = [];
   if (opts.format !== 'html') {
@@ -129,6 +145,7 @@ async function main() {
   const shown = relative(process.cwd(), runDir);
   const dir = shown.startsWith('..') ? runDir : shown;
   console.log(`✓ Report: ${join(dir, written[0])}${written[1] ? ` (also ${written[1]})` : ''}`);
+  updateDashboard(opts.outRoot);
 }
 
 try {

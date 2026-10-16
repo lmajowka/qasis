@@ -65,7 +65,7 @@ export function renderMarkdown(report, data, meta) {
   return out.join('\n');
 }
 
-const esc = (s) =>
+export const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 export function renderHtml(report, data, meta) {

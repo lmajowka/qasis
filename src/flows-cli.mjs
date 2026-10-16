@@ -11,6 +11,7 @@ import { relative, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { parseArgs } from 'node:util';
 import { flowIntervalHours, loadLlmSettings } from './config.mjs';
+import { buildDashboard } from './dashboard.mjs';
 import { runFlowDiscovery } from './flows/run.mjs';
 import { acquireLock, flowsDir, loadState } from './flows/store.mjs';
 
@@ -86,6 +87,11 @@ async function pass(opts, dir, llm) {
   console.log(`✓ ${run.found} flow(s) found: ${run.added} new, ${run.changed} changed, ${run.missing} no longer seen`);
   for (const f of [...merged.added, ...merged.changed]) console.log(`  ${f.status === 'new' ? '+' : '~'} ${f.doc.name}`);
   console.log(`✓ Docs: ${shown(dir)}/index.md (this run: ${shown(dir)}/runs/${run.file})`);
+  try {
+    buildDashboard(opts.outRoot);
+  } catch (err) {
+    log(`⚠ Could not update the dashboard: ${err.message}`);
+  }
 }
 
 async function main() {

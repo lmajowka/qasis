@@ -18,6 +18,7 @@ npm run qa -- example.com --depth 1 --max-pages 5 --no-ai   # quick run without 
 npm run qa -- https://example.com --format html
 npm run flows -- example.com --once --no-ai --depth 1 --max-pages 5   # one flow-discovery pass
 npm run flows -- example.com                                         # watch: a pass every 4 h
+npm run dashboard                      # rebuild reports/index.html (also rebuilt after every qa run and flow pass)
 npm run watch -- example.com --no-ai   # same watch, as a launchd/systemd user service; npm run unwatch -- example.com
 ```
 
@@ -49,3 +50,5 @@ To add an LLM provider, touch three places: `PROVIDERS` in `setup/providers.mjs`
 2. `store.mjs` `mergeFlows()` diffs the run against `reports/<site>/flows/state.json` into added, changed, unchanged and newly missing.
 3. `document.mjs` `documentFlows()` has the LLM write docs (`DOCS_SCHEMA`) for new and changed flows. `basicDoc()` is the same shape built from rules, used as the fallback.
 4. `render.mjs` writes `<id>.md`, `index.md` and `runs/<time>.md`. `run.mjs` ties a single pass together.
+
+**`src/dashboard.mjs`** builds `reports/index.html` across all sites by reading only files on disk: each QA run's `raw/report.json` (written by `cli.mjs` as `{ run, meta, report }`; older runs fall back to `llm-report.json` or re-derive from `condensed.json` via `writeBasicReport()`) and each site's `flows/state.json`. `cli.mjs` and `flows-cli.mjs` rebuild it after each run; a failure there is only a warning.
