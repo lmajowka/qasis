@@ -5,7 +5,8 @@
   "type": "module",
   "private": true,
   "bin": {
-    "qasis-qa": "src/cli.mjs"
+    "qasis-qa": "src/cli.mjs",
+    "qasis-flows": "src/flows-cli.mjs"
   },
   "engines": {
     "node": ">=22"
@@ -14,7 +15,8 @@
     "setup": "node setup/index.mjs",
     "status": "node setup/index.mjs --status",
     "uninstall": "node setup/index.mjs --uninstall",
-    "qa": "node src/cli.mjs"
+    "qa": "node src/cli.mjs",
+    "flows": "node src/flows-cli.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.135.0",

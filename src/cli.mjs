@@ -10,7 +10,7 @@ import { join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { condenseFindings, SEVERITIES, writeBasicReport, writeReportWithLlm } from './analyze.mjs';
 import { loadLlmSettings } from './config.mjs';
-import { crawlSite } from './crawl.mjs';
+import { crawlSite, siteSlug } from './crawl.mjs';
 import { renderHtml, renderMarkdown } from './report.mjs';
 
 const USAGE = `Usage: npm run qa -- <url> [options]
@@ -61,7 +61,7 @@ function parseOptions(argv) {
 
 /** reports/<host>/<YYYY-MM-DD>, with -2, -3… if that run directory already exists. */
 function makeRunDir(outRoot, url) {
-  const site = new URL(url).host.replace(/[^a-z0-9.-]/gi, '_');
+  const site = siteSlug(url);
   const date = new Date().toISOString().slice(0, 10);
   let dir = join(outRoot, site, date);
   for (let n = 2; existsSync(dir); n++) dir = join(outRoot, site, `${date}-${n}`);

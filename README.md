@@ -2,7 +2,7 @@
 
 An agent that continuously QAs websites and generates reports.
 
-> Status: runs one QA pass over one website on demand. Scheduling comes later.
+> Status: runs one QA pass over one website on demand, and can watch a site for new user flows on a schedule.
 
 ## Install
 
@@ -87,3 +87,52 @@ raw/llm-report.json the LLM's structured answer, model and token usage
 ```
 
 The site's findings (URLs, error messages, HTML snippets) are sent to your LLM provider. Screenshots are not.
+
+## Discover user flows
+
+Flow discovery finds the user flows a site offers and documents each one so a tester can follow it.
+It keeps watching and re-runs every 4 hours, reporting what is new, what changed and what has disappeared.
+
+```bash
+npm run flows -- https://example.com              # keep running, one pass every 4 hours
+npm run flows -- https://example.com --once       # one pass, then exit
+npm run flows -- example.com --every 12 --no-ai   # every 12 hours, rule-based docs
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--once` | off | Run one pass and exit, instead of watching |
+| `--every <hours>` | 4 | Hours between passes; can also be set as `"flowDiscovery": { "intervalHours": 4 }` in `config.json` (the flag wins) |
+| `--depth <n>` | 3 | How many clicks from the start URL to follow same-site links |
+| `--max-pages <n>` | 40 | Maximum number of pages to open per pass |
+| `--no-ai` | off | Document flows with fixed rules instead of the LLM |
+| `--out <dir>` | `reports` | Output root |
+
+The schedule is saved with the site's state, so restarting the watcher does not cause an early pass.
+Only one discovery process can run per site at a time.
+
+### What counts as a flow
+
+- **Forms:** sign up, log in, password reset, search, contact, newsletter, checkout, or a generic form. Each comes with its fields, labels, required fields and submit button.
+- **Calls to action** that a page's scripts handle (e.g. an "Add to cart" button), or that hand off to another site (e.g. "Book a demo" pointing to a scheduling tool).
+
+Discovery is **read-only**: it never fills in or submits a form and never clicks a button, so it cannot create accounts, orders or messages.
+That means the documented outcome of each flow is inferred, not verified.
+Pages behind a login are not reached yet.
+
+A flow keeps its ID across runs: a form is identified by where it submits, or by its field names if its scripts handle it.
+If its fields, required fields or submit button change, it is reported as **changed**.
+If it is not found in a pass, it is marked **not seen**. It may have been removed, or it may simply have been beyond that pass's page limit.
+
+### Output
+
+```
+reports/<site>/flows/
+  index.md            every known flow, its status, first and last seen
+  <flow-id>.md        steps, expected outcome, form fields, test ideas, pages it appears on
+  runs/<time>.md      what was new, changed or no longer seen in that pass
+  state.json          what the next pass compares against
+  raw/discovery.json  everything the last crawl found
+```
+
+New and changed flows are sent to your LLM provider to be documented: URLs, link texts and form structure (field names and labels, never values).

@@ -2,12 +2,10 @@
 // merged, written in plain language. The LLM does the judgement; the code
 // first condenses the raw data so the prompt stays small, and afterwards
 // enforces the severity order.
-import Anthropic from '@anthropic-ai/sdk';
+import { callLlmJson } from './llm.mjs';
 
 export const SEVERITIES = ['critical', 'high', 'medium', 'low'];
 const CATEGORIES = ['javascript', 'network', 'broken-link', 'accessibility', 'performance', 'mobile', 'other'];
-
-const DEFAULT_MODELS = { anthropic: 'claude-opus-5-5', openai: 'gpt-5', deepseek: 'deepseek-v4-pro' };
 
 const MAX_GROUPS = 60; // per category, to keep the prompt bounded
 const MAX_PAGES_PER_GROUP = 15;
@@ -128,101 +126,23 @@ function sortIssues(report) {
   return report;
 }
 
-async function callAnthropic({ apiKey, model, input }) {
-  const client = new Anthropic({ apiKey });
-  const stream = client.beta.messages.stream({
-    model,
-    max_tokens: 64000,
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default',
-    thinking: { type: 'adaptive' },
-    output_config: { effort: 'medium', format: { type: 'json_schema', schema: REPORT_SCHEMA } },
-    system: SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: `QA findings (JSON):\n\n${input}` }],
-  });
-  const message = await stream.finalMessage();
-  if (message.stop_reason === 'refusal') {
-    throw new Error(`The model declined to write the report (${message.stop_details?.category ?? 'no category'}).`);
-  }
-  if (message.stop_reason === 'max_tokens') throw new Error('The model ran out of output tokens.');
-  const text = message.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
-  return { text, model: message.model, usage: message.usage };
-}
-
-// OpenAI-style chat completions, shared by OpenAI and DeepSeek.
-async function callChatCompletions({ url, label, apiKey, model, system, input, extra }) {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: `QA findings (JSON):\n\n${input}` },
-      ],
-      ...extra,
-    }),
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(`${label} returned HTTP ${res.status}: ${body.error?.message ?? 'unknown error'}`);
-  const choice = body.choices?.[0];
-  if (choice?.message?.refusal) throw new Error(`The model declined to write the report: ${choice.message.refusal}`);
-  if (choice?.finish_reason === 'length') throw new Error('The model ran out of output tokens.');
-  return { text: choice?.message?.content ?? '', model: body.model, usage: body.usage };
-}
-
-function callOpenAI({ apiKey, model, input }) {
-  return callChatCompletions({
-    url: 'https://api.openai.com/v1/chat/completions',
-    label: 'OpenAI',
-    apiKey,
-    model,
-    system: SYSTEM_PROMPT,
-    input,
-    extra: {
-      response_format: { type: 'json_schema', json_schema: { name: 'qa_report', strict: true, schema: REPORT_SCHEMA } },
-    },
-  });
-}
-
-// DeepSeek only offers `json_object` mode (no schema enforcement), so the schema
-// goes in the prompt and the result is shape-checked in writeReportWithLlm().
-async function callDeepSeek({ apiKey, model, input }) {
-  const result = await callChatCompletions({
-    url: 'https://api.deepseek.com/chat/completions',
-    label: 'DeepSeek',
-    apiKey,
-    model,
-    system: `${SYSTEM_PROMPT}\n\nRespond with a single JSON object that matches this JSON Schema:\n${JSON.stringify(REPORT_SCHEMA)}`,
-    input,
-    extra: { response_format: { type: 'json_object' }, max_tokens: 32000 },
-  });
-  if (!result.text.trim()) throw new Error('DeepSeek returned an empty response.');
-  return result;
-}
-
 /**
  * Ask the configured LLM to write the report.
  * @returns {Promise<{ report: object, meta: object }>}
  */
-export async function writeReportWithLlm(condensed, { provider, apiKey, model }) {
-  const call = { anthropic: callAnthropic, openai: callOpenAI, deepseek: callDeepSeek }[provider];
-  if (!call) throw new Error(`Unsupported LLM provider: ${provider}`);
-  const chosenModel = model || DEFAULT_MODELS[provider];
-  const { text, model: usedModel, usage } = await call({ apiKey, model: chosenModel, input: JSON.stringify(condensed) });
-
-  let report;
-  try {
-    report = JSON.parse(text);
-  } catch {
-    throw new Error('The model returned a report that is not valid JSON.');
-  }
+export async function writeReportWithLlm(condensed, llm) {
+  const { data: report, meta } = await callLlmJson(llm, {
+    system: SYSTEM_PROMPT,
+    schema: REPORT_SCHEMA,
+    schemaName: 'qa_report',
+    prompt: `QA findings (JSON):\n\n${JSON.stringify(condensed)}`,
+  });
   const shapeOk = ['good', 'fair', 'poor'].includes(report?.overallHealth) && typeof report.summary === 'string'
     && Array.isArray(report.issues) && Array.isArray(report.positives);
   if (!shapeOk) {
     throw new Error('The model returned JSON that does not match the report shape.');
   }
-  return { report: sortIssues(report), meta: { provider, model: usedModel ?? chosenModel, usage } };
+  return { report: sortIssues(report), meta };
 }
 
 /**

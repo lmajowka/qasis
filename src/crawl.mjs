@@ -14,7 +14,7 @@ const SETTLE_TIMEOUT_MS = 5_000;
 const LINK_TIMEOUT_MS = 15_000;
 const AXE_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'];
 // Links to these are checked for status but not opened as pages.
-const NON_PAGE_EXT = /\.(pdf|zip|gz|dmg|exe|png|jpe?g|gif|webp|svg|ico|mp4|webm|mp3|wav|docx?|xlsx?|pptx?|csv|xml|json|txt)$/i;
+export const NON_PAGE_EXT = /\.(pdf|zip|gz|dmg|exe|png|jpe?g|gif|webp|svg|ico|mp4|webm|mp3|wav|docx?|xlsx?|pptx?|csv|xml|json|txt)$/i;
 
 const { defaultBrowserType: _, ...IPHONE } = devices['iPhone 13'];
 export const VIEWPORTS = {
@@ -32,6 +32,11 @@ export function normalizeUrl(href, base) {
   } catch {
     return null;
   }
+}
+
+/** Directory name for a site under the output root: its host, filesystem-safe. */
+export function siteSlug(url) {
+  return new URL(url).host.replace(/[^a-z0-9.-]/gi, '_');
 }
 
 function slugFor(url, index) {

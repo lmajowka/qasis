@@ -16,6 +16,8 @@ bash qasis.sh --uninstall     # same as: npm run uninstall
 npm install && npx playwright install chromium   # needed only for the QA runner
 npm run qa -- example.com --depth 1 --max-pages 5 --no-ai   # quick run without an API key
 npm run qa -- https://example.com --format html
+npm run flows -- example.com --once --no-ai --depth 1 --max-pages 5   # one flow-discovery pass
+npm run flows -- example.com                                         # watch: a pass every 4 h
 ```
 
 Output goes to `reports/<host>/<YYYY-MM-DD>[-N]/`, which is gitignored. To check a change, run a small `--no-ai` pass and inspect `report.md` and the `raw/*.json` files.
@@ -33,9 +35,15 @@ There are two halves, and they deliberately have different dependency rules.
 1. `config.mjs` `loadLlmSettings()` reads config plus the key through `setup/credentials.mjs`. This runs *before* crawling so that a missing setup fails fast.
 2. `crawl.mjs` `crawlSite()` does a breadth-first crawl, one page at a time, restricted to the start URL's origin. It uses separate desktop (1440×900) and mobile (iPhone 13) contexts. It collects JS errors, failed and 4xx/5xx requests, axe violations, screenshots and timings. Same-site links that are not visited still get a HEAD/GET status check. The result is written to `raw/findings.json`.
 3. `analyze.mjs` `condenseFindings()` groups the raw data and caps its size (`MAX_GROUPS`, `MAX_PAGES_PER_GROUP`) so the prompt stays bounded. The result is written to `raw/condensed.json`. Screenshots are never sent to the LLM.
-4. `writeReportWithLlm()` asks for structured JSON that matches `REPORT_SCHEMA`. The Anthropic path uses the SDK with streaming, a JSON-schema `output_config`, adaptive thinking and server-side fallbacks. The OpenAI path uses raw `fetch` with `response_format: json_schema`. If this step fails, `writeBasicReport()` produces the same report shape from fixed rules, and the report carries a warning.
+4. `writeReportWithLlm()` (via `callLlmJson()` in `llm.mjs`) asks for structured JSON that matches `REPORT_SCHEMA`. The Anthropic path uses the SDK with streaming, a JSON-schema `output_config`, adaptive thinking and server-side fallbacks. The OpenAI path uses raw `fetch` with `response_format: json_schema`. If this step fails, `writeBasicReport()` produces the same report shape from fixed rules, and the report carries a warning.
 5. `report.mjs` renders the report object to Markdown and/or HTML.
 
 The report object (`overallHealth`, `summary`, `issues[]`, `positives[]`) is the contract between the LLM path, the rule-based fallback and the renderers. If you change `REPORT_SCHEMA`, update `writeBasicReport()` and both renderers to match. Severities (`critical/high/medium/low`) and categories are defined once in `analyze.mjs`. The severity rubric lives in `SYSTEM_PROMPT` and is mirrored by the fixed rules in `writeBasicReport()`.
 
-To add an LLM provider, touch three places: `PROVIDERS` in `setup/providers.mjs`, `DEFAULT_MODELS`, and the `call*` dispatch in `src/analyze.mjs`.
+To add an LLM provider, touch three places: `PROVIDERS` in `setup/providers.mjs`, `DEFAULT_MODELS`, and the `call*` dispatch in `src/llm.mjs`. Every LLM call goes through `callLlmJson()`.
+
+**`src/flows/` is flow discovery.** It is driven by `src/flows-cli.mjs`, which runs one pass with `--once`, or otherwise loops every `--every` / `flowDiscovery.intervalHours` / 4 hours. It reschedules from `state.lastRunAt` and holds a per-site `.lock`.
+1. `discover.mjs` `discoverFlows()` crawls read-only (it never submits or clicks). It extracts forms and calls to action, classifies their kind with heuristics, and gives each a stable `id`/`key` built from structure alone, plus a `shape` hash used to detect changes. Keep IDs deterministic and independent of crawl order, because the new/changed detection depends on that.
+2. `store.mjs` `mergeFlows()` diffs the run against `reports/<site>/flows/state.json` into added, changed, unchanged and newly missing.
+3. `document.mjs` `documentFlows()` has the LLM write docs (`DOCS_SCHEMA`) for new and changed flows. `basicDoc()` is the same shape built from rules, used as the fallback.
+4. `render.mjs` writes `<id>.md`, `index.md` and `runs/<time>.md`. `run.mjs` ties a single pass together.
